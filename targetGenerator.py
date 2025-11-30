@@ -449,7 +449,10 @@ def get_next_image_index(obj_dir: Path) -> int:
 
 def save_image_and_annotation(
     image: Image.Image,
-    bbox: Tuple[float, float, float, float],
+    bbox: (
+        Tuple[float, float, float, float]
+        | Tuple[float, float, float, float, float, float, float, float]
+    ),
     index: int,
     obj_dir: Path = OBJ_DIR,
 ) -> Path:
@@ -498,8 +501,23 @@ def update_data_yaml(num_classes: int = 1, class_names: List[str] = ["TARGET"]) 
         num_classes: Number of object classes.
         class_names: List of class names.
     """
-    # TODO: Implement data.yaml update
-    raise NotImplementedError("update_data_yaml not yet implemented")
+    # Load in current data.yaml
+    with open("data.yaml",'r') as file:
+        data_dict: dict = yaml.safe_load(file)
+
+    # Make sure the data paths are in the yaml
+    if not data_dict.get("train",None):
+        data_dict["train"] = "data/train.txt"
+    if not data_dict.get("val", None):
+        data_dict["val"] = "data/valid.txt"
+
+    # Set the class fields
+    data_dict["nc"] = num_classes
+    data_dict["names"] = class_names
+
+    # WRite the updated data.yaml
+    with open("data.yaml","w") as file:
+        yaml.dump(data_dict,file)
 
 
 # =============================================================================
@@ -546,7 +564,7 @@ def setup_data_directory(clean: bool = False) -> None:
 
     if clean:
         with open("data.yaml", "w") as file:
-            yaml.dump({"train": "data/train.txt", "val": "data/valid.txt"},file)
+            yaml.dump({"train": "data/train.txt", "val": "data/valid.txt"}, file)
 
 
 # =============================================================================
