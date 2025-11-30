@@ -76,11 +76,16 @@ def generate_grass_background(
         PIL Image of the generated grass background.
     """
 
-    # TODO: Implement procedural grass generation
-    # - Create green base layer
-    # - Add random noise for texture
-    # - Optionally add color variation
-    raise NotImplementedError("generate_grass_background not yet implemented")
+    # Generate a noise map
+    noise_map = np.random.normal(0.75,40/255, (width,height))
+    # Clip the noise map to be 0-1.0
+    noise_map = np.clip(noise_map, 0, 1.0)
+    # Expand map axis(1 channel image to 3 channel)
+    noise_map = np.repeat(np.expand_dims(noise_map,axis=2),3,2)
+    # Apply coloring
+    colored_map = GRASS_GREEN*noise_map.astype(np.uint8)
+    
+    return Image.fromarray(colored_map)
 
 
 def load_background_images(background_dir: Optional[Path] = None) -> List[Image.Image]:
@@ -132,11 +137,7 @@ def generate_ukrainian_flag(width: int = 90, height: int = 60) -> Image.Image:
         PIL Image of the Ukrainian flag with transparency.
     """
 
-    # TODO: Implement Ukrainian flag generation
-    # - Create RGBA image
-    # - Draw blue rectangle on top half
-    # - Draw yellow rectangle on bottom half
-    raise NotImplementedError("generate_ukrainian_flag not yet implemented")
+    
 
 
 def load_target_images(target_dir: Optional[Path] = None) -> List[Image.Image]:
