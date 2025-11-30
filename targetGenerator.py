@@ -12,8 +12,9 @@ Usage:
 """
 
 import os
-import random
 import shutil
+import random
+import yaml
 import argparse
 from pathlib import Path
 from typing import Tuple, List, Optional
@@ -144,8 +145,11 @@ def get_random_background(backgrounds: List[Image.Image]) -> Image.Image:
     Returns:
         A copy of a randomly selected background image.
     """
-    # TODO: Implement random background selection
-    raise NotImplementedError("get_random_background not yet implemented")
+
+    # Get random index in the list
+    idx = np.random.randint(0, len(backgrounds))
+    # return the item at the index
+    return backgrounds[idx]
 
 
 # =============================================================================
@@ -223,8 +227,11 @@ def get_random_target(targets: List[Image.Image]) -> Image.Image:
     Returns:
         A copy of a randomly selected target image.
     """
-    # TODO: Implement random target selection
-    raise NotImplementedError("get_random_target not yet implemented")
+
+    # Get random index in the list
+    idx = np.random.randint(0, len(targets))
+    # return the item at the index
+    return targets[idx]
 
 
 # =============================================================================
@@ -510,19 +517,36 @@ def setup_data_directory(clean: bool = False) -> None:
     Args:
         clean: If True, remove existing data and start fresh.
     """
-    # TODO: Implement directory setup
-    # - Check if directories exist
-    # - If clean, delete and recreate
-    # - If not clean and doesn't exist, create
-    raise NotImplementedError("setup_data_directory not yet implemented")
 
+    text_files = ["alldata.txt", "train.txt", "valid.txt"]
 
-def clear_data_files() -> None:
-    """
-    Clear the contents of train.txt, valid.txt, and alldata.txt.
-    """
-    # TODO: Implement file clearing
-    raise NotImplementedError("clear_data_files not yet implemented")
+    # Check if directory exists
+    if os.path.isdir("data/obj/"):
+        # Directory alreaedy exists, if clean then clear it out
+        if clean:
+            shutil.rmtree("data/obj/")
+            os.makedirs("data/obj/")
+            for fname in text_files:
+                if os.path.isfile(f"data/{fname}"):
+                    os.remove(f"data/{fname}")
+                os.close(os.open(f"data/{fname}", flags=os.O_CREAT | os.O_TRUNC))
+
+    elif os.path.isdir("data/"):
+        # obj/ doesn't exist, double check for data/
+        os.makedir("data/obj/")
+        for fname in text_files:
+            if os.path.isfile(f"data/{fname}"):
+                os.remove(f"data/{fname}")
+            os.close(os.open(f"data/{fname}", flags=os.O_CREAT | os.O_TRUNC))
+    else:
+        # Directories don't exist
+        os.makedirs("data/obj/")
+        for fname in text_files:
+            os.close(os.open(f"data/{fname}", flags=os.O_CREAT | os.O_TRUNC))
+
+    if clean:
+        with open("data.yaml", "w") as file:
+            yaml.dump({"train": "data/train.txt", "val": "data/valid.txt"},file)
 
 
 # =============================================================================
@@ -641,6 +665,5 @@ Examples:
     )
 
     args = parser.parse_args()
-    global VERBOSE
     VERBOSE = args.verbose
     main(args)
