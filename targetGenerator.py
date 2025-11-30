@@ -54,6 +54,7 @@ AUGMENTATION_CONFIG = {
     "pixel_shift": 0.1,
 }
 
+VERBOSE = False
 
 # =============================================================================
 # BACKGROUND GENERATION
@@ -77,33 +78,60 @@ def generate_grass_background(
     """
 
     # Generate a noise map
-    noise_map = np.random.normal(np.random.normal(0.75,0.1),40/255, (width,height))
+    noise_map = np.random.normal(np.random.normal(0.75, 0.1), 40 / 255, (width, height))
     # Clip the noise map to be 0-1.0
     noise_map = np.clip(noise_map, 0, 1.0)
     # Expand map axis(1 channel image to 3 channel)
-    noise_map = np.repeat(np.expand_dims(noise_map,axis=2),3,2)
+    noise_map = np.repeat(np.expand_dims(noise_map, axis=2), 3, 2)
     # Apply coloring
-    colored_map = GRASS_GREEN*noise_map.astype(np.uint8)
-    
+    colored_map = GRASS_GREEN * noise_map.astype(np.uint8)
+
     return Image.fromarray(colored_map)
 
 
-def load_background_images(background_dir: Optional[Path] = None) -> List[Image.Image]:
+def load_background_images(
+    background_dir: Optional[Path] = None, num_bg: int = 5
+) -> List[Image.Image]:
     """
     Load background images from a directory, or generate procedural ones.
 
     Args:
         background_dir: Optional path to directory containing background images.
                        If None or empty, generates procedural backgrounds.
+        num_bg: The number of backgrounds to generate when generating backgrounds
 
     Returns:
         List of PIL Images to use as backgrounds.
     """
-    # TODO: Implement background loading
-    # - Check if directory exists and has images
-    # - Load all valid image files
-    # - Fall back to procedural generation if needed
-    raise NotImplementedError("load_background_images not yet implemented")
+
+    background_list = []
+
+    if VERBOSE:
+        print("Loading in backgrounds...")
+    # Check background directory
+    if not background_dir or os.path.isdir(background_dir):
+        # Directory exists, now check for not empty
+        for file in os.scandir(background_dir):
+            try:
+                background_list.append(Image.open(file.path))
+            except Exception as e:
+                print(f"Couldn't open image {file.path} with exception {e}")
+        if not background_list:
+            print(
+                f"WARNING: Background directory empty!!! \n Generating {num_bg} background images"
+            )
+            for _ in range(num_bg):
+                background_list.append(generate_grass_background())
+        elif VERBOSE:
+            print(f"Done, found {len(background_list)} backgrounds!")
+    else:
+        # No directory generating images
+        if VERBOSE:
+            print(f"Generating {num_bg} background images")
+        for _ in range(num_bg):
+            background_list.append(generate_grass_background())
+
+    return background_list
 
 
 def get_random_background(backgrounds: List[Image.Image]) -> Image.Image:
@@ -137,10 +165,10 @@ def generate_ukrainian_flag(width: int = 90, height: int = 60) -> Image.Image:
         PIL Image of the Ukrainian flag with transparency.
     """
 
-    top_half = np.ones((int(height/2),width,3))*UKRAINE_BLUE
-    bottom_half = np.ones((int(height/2),width,3))*UKRAINE_YELLOW
+    top_half = np.ones((int(height / 2), width, 3)) * UKRAINE_BLUE
+    bottom_half = np.ones((int(height / 2), width, 3)) * UKRAINE_YELLOW
 
-    flag = np.concatenate((top_half,bottom_half))
+    flag = np.concatenate((top_half, bottom_half))
 
     return Image.fromarray(flag.astype(np.uint8))
 
@@ -156,11 +184,33 @@ def load_target_images(target_dir: Optional[Path] = None) -> List[Image.Image]:
     Returns:
         List of PIL Images to use as targets.
     """
-    # TODO: Implement target loading
-    # - Check if directory exists and has images
-    # - Load all valid image files
-    # - Fall back to procedural generation if needed
-    raise NotImplementedError("load_target_images not yet implemented")
+
+    target_list = []
+
+    if VERBOSE:
+        print("Loading in targets...")
+    # Check target directory
+    if not target_dir or os.path.isdir(target_dir):
+        # Directory exists, now check for not empty
+        for file in os.scandir(target_dir):
+            try:
+                target_list.append(Image.open(file.path))
+            except Exception as e:
+                print(f"Couldn't open image {file.path} with exception {e}")
+        if not target_list:
+            print(
+                f"WARNING: Target directory empty!!! \n Generating a Ukraine Flag image"
+            )
+            target_list.append(generate_ukrainian_flag())
+        elif VERBOSE:
+            print(f"Done, found {len(target_list)} targets!")
+    else:
+        # No directory, generating an image
+        if VERBOSE:
+            print(f"Generating a Ukraine Flag image")
+        target_list.append(generate_ukrainian_flag())
+
+    return target_list
 
 
 def get_random_target(targets: List[Image.Image]) -> Image.Image:
@@ -536,11 +586,12 @@ def main(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command line arguments.
     """
-    print(f"Target Generator")
-    print(f"  Images to generate: {args.number}")
-    print(f"  Training split: {args.training_split}%")
-    print(f"  Clean mode: {args.clean}")
-    print()
+    if args.verbose:
+        print(f"Target Generator")
+        print(f"  Images to generate: {args.number}")
+        print(f"  Training split: {args.training_split}%")
+        print(f"  Clean mode: {args.clean}")
+        print()
 
     generate_dataset(
         num_images=args.number, training_split=args.training_split, clean=args.clean
@@ -582,6 +633,14 @@ Examples:
         choices=range(0, 101),
         metavar="0-100",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        help="Verbose mode, more information is printed in verbose mode",
+        action="store_true",
+    )
 
     args = parser.parse_args()
+    global VERBOSE
+    VERBOSE = args.verbose
     main(args)
