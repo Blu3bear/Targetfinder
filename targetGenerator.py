@@ -77,7 +77,7 @@ def generate_grass_background(
     """
 
     # Generate a noise map
-    noise_map = np.random.normal(0.75,40/255, (width,height))
+    noise_map = np.random.normal(np.random.normal(0.75,0.1),40/255, (width,height))
     # Clip the noise map to be 0-1.0
     noise_map = np.clip(noise_map, 0, 1.0)
     # Expand map axis(1 channel image to 3 channel)
