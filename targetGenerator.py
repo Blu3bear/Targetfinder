@@ -137,7 +137,12 @@ def generate_ukrainian_flag(width: int = 90, height: int = 60) -> Image.Image:
         PIL Image of the Ukrainian flag with transparency.
     """
 
-    
+    top_half = np.ones((int(height/2),width,3))*UKRAINE_BLUE
+    bottom_half = np.ones((int(height/2),width,3))*UKRAINE_YELLOW
+
+    flag = np.concatenate((top_half,bottom_half))
+
+    return Image.fromarray(flag.astype(np.uint8))
 
 
 def load_target_images(target_dir: Optional[Path] = None) -> List[Image.Image]:
