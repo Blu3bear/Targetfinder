@@ -13,7 +13,6 @@ Usage:
 
 import os
 import shutil
-import random
 import yaml
 import argparse
 from pathlib import Path
@@ -133,9 +132,6 @@ def load_background_images(
             background_list.append(generate_grass_background())
 
     return background_list
-
-
-def get_random_background(backgrounds: List[Image.Image]) -> Image.Image:
     """
     Select a random background from the available options.
 
@@ -177,7 +173,7 @@ def generate_ukrainian_flag(width: int = 90, height: int = 60) -> Image.Image:
     return Image.fromarray(flag.astype(np.uint8))
 
 
-def load_target_images(target_dir: Optional[Path] = None) -> List[Image.Image]:
+def load_target_images(target_dir: Optional[Path] = None) -> Tuple[List[Image.Image],List[str]]:
     """
     Load target images from a directory, or generate procedural ones.
 
@@ -190,6 +186,9 @@ def load_target_images(target_dir: Optional[Path] = None) -> List[Image.Image]:
     """
 
     target_list = []
+
+    # TODO: update the class list based on the file structure of target_dir
+    class_list = ["target"]
 
     if VERBOSE:
         print("Loading in targets...")
@@ -214,29 +213,29 @@ def load_target_images(target_dir: Optional[Path] = None) -> List[Image.Image]:
             print(f"Generating a Ukraine Flag image")
         target_list.append(generate_ukrainian_flag())
 
-    return target_list
-
-
-def get_random_target(targets: List[Image.Image]) -> Image.Image:
-    """
-    Select a random target from the available options.
-
-    Args:
-        targets: List of available target images.
-
-    Returns:
-        A copy of a randomly selected target image.
-    """
-
-    # Get random index in the list
-    idx = np.random.randint(0, len(targets))
-    # return the item at the index
-    return targets[idx]
+    return target_list, class_list
 
 
 # =============================================================================
 # IMAGE COMPOSITION
 # =============================================================================
+
+
+def get_random_item(candidates: List[Image.Image]) -> Image.Image:
+    """
+    Select a random item from the available options.
+
+    Args:
+        candidates: List of available images.
+
+    Returns:
+        A randomly selected image.
+    """
+
+    # Get random index in the list
+    idx = np.random.randint(0, len(candidates))
+    # return the item at the index
+    return candidates[idx]
 
 
 def transform_target(
@@ -413,6 +412,7 @@ def augment_pixel_shift(image: Image.Image, max_shift: int = 5) -> Image.Image:
 
 def generate_yolo_annotation(
     class_id: int, bbox: Tuple[float, float, float, float]
+        | Tuple[float, float, float, float, float, float, float, float]
 ) -> str:
     """
     Generate a YOLO format annotation string.
@@ -572,17 +572,17 @@ def setup_data_directory(clean: bool = False) -> None:
 # =============================================================================
 
 
-def generate_single_image(
-    backgrounds: List[Image.Image],
-    targets: List[Image.Image],
+def generate_image(
+    background: Image.Image,
+    target: Image.Image,
     apply_augmentation: bool = True,
 ) -> Tuple[Image.Image, Tuple[float, float, float, float]]:
     """
     Generate a single synthetic training image.
 
     Args:
-        backgrounds: List of available background images.
-        targets: List of available target images.
+        background: The background Image.
+        targets: The target Image.
         apply_augmentation: Whether to apply random augmentations.
 
     Returns:
@@ -606,14 +606,41 @@ def generate_dataset(num_images: int, training_split: int, clean: bool = False) 
         training_split: Percentage of images for training (rest for validation).
         clean: If True, clear existing data before generating.
     """
-    # TODO: Implement full dataset generation
-    # 1. Setup/clean data directory
-    # 2. Load or generate backgrounds and targets
-    # 3. Determine starting index
-    # 4. Generate each image
-    # 5. Save images and annotations
-    # 6. Update data files
-    raise NotImplementedError("generate_dataset not yet implemented")
+
+    if VERBOSE:
+        print("Generating dataset...")
+
+    # Ensure that the YOLO directory structure is set up
+    setup_data_directory(clean)
+
+    # Get a list of backgrounds
+    backGrounds = load_background_images("backgrounds/")
+
+    # Get a list of targets
+    targets, classes = load_target_images("targets/")
+
+    update_data_yaml(len(classes),classes)
+
+    starting_index = get_next_image_index("data/obj/")
+    data_list = []
+
+    for idx in range(num_images):
+        # Pick a background
+        bg = get_random_item(backGrounds)
+        # Pick a target
+        target = get_random_item(targets)
+
+        # Put the target on the background
+        gen, bbox = generate_image(bg,target)
+
+        # Save the image in the directory,
+        # and save the path to list to later write alldata.txt train.txt and val.txt
+        data_list.append(save_image_and_annotation(gen,bbox,starting_index+idx))
+
+    update_data_files(data_list, training_split, not clean)
+
+    if VERBOSE:
+        print("Finished generating dataset!")
 
 
 # =============================================================================
