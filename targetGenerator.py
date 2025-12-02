@@ -84,9 +84,9 @@ def generate_grass_background(
     # Expand map axis(1 channel image to 3 channel)
     noise_map = np.repeat(np.expand_dims(noise_map, axis=2), 3, 2)
     # Apply coloring
-    colored_map = GRASS_GREEN * noise_map.astype(np.uint8)
+    colored_map = GRASS_GREEN * noise_map
 
-    return Image.fromarray(colored_map)
+    return Image.fromarray(colored_map.astype(np.uint8))
 
 
 def load_background_images(
@@ -165,12 +165,12 @@ def generate_ukrainian_flag(width: int = 90, height: int = 60) -> Image.Image:
         PIL Image of the Ukrainian flag with transparency.
     """
 
-    top_half = np.ones((int(height / 2), width, 3)) * UKRAINE_BLUE
-    bottom_half = np.ones((int(height / 2), width, 3)) * UKRAINE_YELLOW
+    top_half = np.ones((int(height // 2), width, 4)) * (*UKRAINE_BLUE, 255)
+    bottom_half = np.ones((int(height // 2 + height % 2), width, 4)) * (*UKRAINE_YELLOW, 255)
 
     flag = np.concatenate((top_half, bottom_half))
 
-    return Image.fromarray(flag.astype(np.uint8))
+    return Image.fromarray(flag.astype(np.uint8), mode='RGBA')
 
 
 def load_target_images(target_dir: Optional[Path] = None) -> Tuple[List[Image.Image],List[str]]:
@@ -237,51 +237,30 @@ def get_random_item(candidates: List[Image.Image]) -> Image.Image:
     # return the item at the index
     return candidates[idx]
 
-
-def transform_target(
-    target: Image.Image,
-    scale_range: Tuple[float, float] = (0.1, 0.5),
-    rotation_range: Tuple[float, float] = (0, 360),
-) -> Image.Image:
-    """
-    Apply random scale and rotation transformations to the target.
+def get_obbox(trans_x: int, trans_y: int, theta: float, width: int, height: int, super_width: int, super_height: int) -> Tuple[int,int,int,int,int,int,int,int]:
+    """Calculates the oriented bounding box of a target given its translation, size and orientation
 
     Args:
-        target: The target image to transform.
-        scale_range: Min and max scale factors (relative to original size).
-        rotation_range: Min and max rotation angles in degrees.
+        trans_x (int): The amount the target was translated in the x direction
+        trans_y (int): The amount the target was translated in the y direction
+        theta (float): the amount the target was rotated in degrees
+        width (int): the width of the target(post scaling)
+        height (int): the width of the target(post scaling)
+        super_width (int): the width of the target image(post scaling and rotating)
+        super_height (int): the width of the target image(post scaling and rotating)
 
     Returns:
-        Transformed target image.
+        Tuple[int,int,int,int,int,int,int,int]: A bounding box in the form of x1,y1,x2,y2,x3,y3,x4,y4 where x1,y1 is the upper left corner and the following coordinates move clockwise around the image. Not yet normalized for yolo obb
     """
-    # TODO: Implement target transformation
-    # - Random scaling within range
-    # - Random rotation within range
-    # - Maintain transparency
-    raise NotImplementedError("transform_target not yet implemented")
 
+    theta_rad = np.deg2rad(theta)
 
-def place_target_on_background(
-    background: Image.Image, target: Image.Image
-) -> Tuple[Image.Image, Tuple[float, float, float, float]]:
-    """
-    Place the target at a random position on the background.
+    x1,y1 = trans_x,trans_y+np.sin(theta_rad)*width
+    x2,y2 = trans_x+np.cos(theta_rad)*width,trans_y
+    x3,y3 = trans_x+super_width,trans_y+np.cos(theta_rad)*height
+    x4,y4 = trans_x+np.sin(theta_rad)*height,trans_y+super_height
 
-    Args:
-        background: The background image.
-        target: The target image to place (should have transparency).
-
-    Returns:
-        Tuple of (composite_image, yolo_bbox) where yolo_bbox is
-        (x_center, y_center, width, height) normalized to [0, 1].
-    """
-    # TODO: Implement target placement
-    # - Calculate valid placement region (target fully within background)
-    # - Choose random position
-    # - Composite target onto background
-    # - Calculate and return YOLO format bounding box
-    raise NotImplementedError("place_target_on_background not yet implemented")
-
+    return (x1,y1,x2,y2,x3,y3,x4,y4)
 
 # =============================================================================
 # AUGMENTATIONS
@@ -588,6 +567,34 @@ def generate_image(
     Returns:
         Tuple of (generated_image, yolo_bbox).
     """
+
+    # Scaling factor for scaling the image
+    scale = np.random.normal(1.0,0.1)
+
+    # Angle for rotation
+    rotation = np.random.randint(0,360)
+
+    new_size = (target.size[0]*scale,target.size[1]*scale)
+
+    # scale and rotate
+    oriented_target = target.resize(new_size,Image.Resampling.HAMMING).rotate(rotation,Image.Resampling.BILINEAR,True,fillcolor=(0,0,0,0))
+
+    trans_x = np.random.randint(0,background.size[0]-oriented_target.size[0])
+    trans_y = np.random.randint(0,background.size[1]-oriented_target.size[1])
+
+    # Paste and translate the reorented target onto the background
+    # the mask makes sure that we dont delete neighboring pixels due to the rotation
+    # the .copy ensures that that background remains unmodified and a new image is created
+    composition = background.copy()
+    composition.paste(im=oriented_target,box=(trans_x,trans_y),mask=oriented_target)
+
+    get_obbox(trans_x, trans_y,rotation,target.size[0]*scale,target.size[1]*scale,oriented_target.size[0],oriented_target.size[1])
+
+    #TODO: apply a tranformation to give some more perspective to the target
+
+    # Calculate corners in PIL coordinates
+    bbox = 
+
     # TODO: Implement single image generation pipeline
     # 1. Pick random background
     # 2. Pick random target
@@ -638,9 +645,6 @@ def generate_dataset(num_images: int, training_split: int, clean: bool = False) 
         data_list.append(save_image_and_annotation(gen,bbox,starting_index+idx))
 
     update_data_files(data_list, training_split, not clean)
-
-    if VERBOSE:
-        print("Finished generating dataset!")
 
 
 # =============================================================================
