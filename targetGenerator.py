@@ -18,7 +18,7 @@ import argparse
 from pathlib import Path
 from typing import Tuple, List, Optional
 
-from PIL import Image
+from PIL import Image, ImageDraw
 import numpy as np
 
 
@@ -252,15 +252,35 @@ def get_obbox(trans_x: int, trans_y: int, theta: float, width: int, height: int,
     Returns:
         Tuple[int,int,int,int,int,int,int,int]: A bounding box in the form of x1,y1,x2,y2,x3,y3,x4,y4 where x1,y1 is the upper left corner and the following coordinates move clockwise around the image. Not yet normalized for yolo obb
     """
+    # PIL rotates counter-clockwise, so we negate the angle
+    theta_rad = np.deg2rad(-theta)
+    
+    # The center of the rotated image (super bounding box)
+    cx = trans_x + super_width / 2
+    cy = trans_y + super_height / 2
+    
+    # Corners of the unrotated rectangle relative to center: 
+    corners_rel = [
+        (-width/2, -height/2),  # top-left
+        (width/2, -height/2),   # top-right  
+        (width/2, height/2),    # bottom-right
+        (-width/2, height/2),   # bottom-left
+    ]
+    
+    rotated_corners = []
+    for rx, ry in corners_rel:
+        # Apply rotation
+        new_x = rx * np.cos(theta_rad) - ry * np.sin(theta_rad)
+        new_y = rx * np.sin(theta_rad) + ry * np.cos(theta_rad)
+        # Translate to actual position
+        rotated_corners.append((cx + new_x, cy + new_y))
+    
+    x1, y1 = rotated_corners[0]
+    x2, y2 = rotated_corners[1]
+    x3, y3 = rotated_corners[2]
+    x4, y4 = rotated_corners[3]
 
-    theta_rad = np.deg2rad(theta)
-
-    x1,y1 = trans_x,trans_y+np.sin(theta_rad)*width
-    x2,y2 = trans_x+np.cos(theta_rad)*width,trans_y
-    x3,y3 = trans_x+super_width,trans_y+np.cos(theta_rad)*height
-    x4,y4 = trans_x+np.sin(theta_rad)*height,trans_y+super_height
-
-    return (x1,y1,x2,y2,x3,y3,x4,y4)
+    return (x1, y1, x2, y2, x3, y3, x4, y4)
 
 # =============================================================================
 # AUGMENTATIONS
@@ -555,7 +575,7 @@ def generate_image(
     background: Image.Image,
     target: Image.Image,
     apply_augmentation: bool = True,
-) -> Tuple[Image.Image, Tuple[float, float, float, float]]:
+) -> Tuple[Image.Image, Tuple[float, float, float, float,float, float, float, float]]:
     """
     Generate a single synthetic training image.
 
@@ -588,20 +608,17 @@ def generate_image(
     composition = background.copy()
     composition.paste(im=oriented_target,box=(trans_x,trans_y),mask=oriented_target)
 
-    get_obbox(trans_x, trans_y,rotation,target.size[0]*scale,target.size[1]*scale,oriented_target.size[0],oriented_target.size[1])
+    # Calculate corners in PIL coordinates
+    obbox = get_obbox(trans_x,trans_y,rotation,new_size(0),new_size(1),oriented_target.size(0),oriented_target.size(1))
+    # normalize to 0-1 for yolo
+    yolo_obbox = tuple(corner/target.size(i%2) for i,corner in enumerate(obbox))
 
     #TODO: apply a tranformation to give some more perspective to the target
 
-    # Calculate corners in PIL coordinates
-    bbox = 
 
-    # TODO: Implement single image generation pipeline
-    # 1. Pick random background
-    # 2. Pick random target
-    # 3. Transform target (scale, rotate)
-    # 4. Place target on background
-    # 5. Apply augmentations if enabled
-    raise NotImplementedError("generate_single_image not yet implemented")
+    #if augment is enabled randomly choose to apply one or more
+
+    return composition, yolo_obbox
 
 
 def generate_dataset(num_images: int, training_split: int, clean: bool = False) -> None:
