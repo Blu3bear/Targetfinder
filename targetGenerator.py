@@ -36,8 +36,8 @@ TARGET_DIR = Path("target")
 BG_DIR = Path("backgrounds")
 
 # Default image dimensions
-DEFAULT_IMG_WIDTH = 640
-DEFAULT_IMG_HEIGHT = 640
+IMG_WIDTH = 640
+IMG_HEIGHT = 640
 
 # Ukrainian flag colors (RGB)
 UKRAINE_BLUE = (0, 87, 183)
@@ -45,6 +45,8 @@ UKRAINE_YELLOW = (255, 215, 0)
 
 # Grass background base color (RGB)
 GRASS_GREEN = (34, 139, 34)
+GRAVEL_GRAY = (68, 74, 80)
+GRAVEL_LIGHT_GRAY = (86, 92, 98)
 
 # Augmentation probabilities (0.0 to 1.0)
 AUGMENTATION_CONFIG = {
@@ -64,7 +66,7 @@ VERBOSE = False
 
 
 def generate_grass_background(
-    width: int = DEFAULT_IMG_WIDTH, height: int = DEFAULT_IMG_HEIGHT
+    width: int = IMG_WIDTH, height: int = IMG_HEIGHT
 ) -> Image.Image:
     """
     Generate a procedural grass-like background image.
@@ -91,6 +93,36 @@ def generate_grass_background(
     return Image.fromarray(colored_map.astype(np.uint8))
 
 
+def generate_gravel_background(
+    width: int = IMG_WIDTH, height: int = IMG_HEIGHT
+) -> Image.Image:
+    """Generate a procedural gravel-like background image.
+
+    Creates a gray base layer with random noise overlay to simulate gravel texture.
+
+    Args:
+        width (int, optional): Width of the image in pixels. Defaults to IMG_WIDTH.
+        height (int, optional): Height of the image in pixels. Defaults to IMG_HEIGHT.
+
+    Returns:
+        Image.Image: The generated background image.
+    """
+    # Generate a noise map
+    noise_map = np.random.normal(np.random.normal(0.75, 0.1), 40 / 255, (width, height))
+    # Clip the noise map to be 0-1.0
+    noise_map = np.clip(noise_map, 0, 1.0)
+    # Expand map axis(1 channel image to 3 channel)
+    noise_map = np.repeat(np.expand_dims(noise_map, axis=2), 3, 2)
+    # Apply coloring
+    colored_map = (
+        GRAVEL_GRAY * noise_map
+        if np.random.uniform() < 0.5
+        else GRAVEL_LIGHT_GRAY * noise_map
+    )
+
+    return Image.fromarray(colored_map.astype(np.uint8))
+
+
 def load_background_images(
     background_dir: Optional[Path] = None, num_bg: int = 5
 ) -> list[Image.Image]:
@@ -111,7 +143,7 @@ def load_background_images(
     if VERBOSE:
         print("Loading in backgrounds...")
     # Check background directory
-    if not background_dir or os.path.isdir(background_dir):
+    if background_dir and os.path.isdir(background_dir):
         # Directory exists, now check for not empty
         for file in os.scandir(background_dir):
             try:
@@ -123,7 +155,7 @@ def load_background_images(
                 f"WARNING: Background directory empty!!! \n Generating {num_bg} background images"
             )
             for _ in range(num_bg):
-                background_list.append(generate_grass_background())
+                background_list.append(generate_grass_background() if np.random.uniform() < 0.8 else generate_gravel_background())
         elif VERBOSE:
             print(f"Done, found {len(background_list)} backgrounds!")
     else:
@@ -131,7 +163,7 @@ def load_background_images(
         if VERBOSE:
             print(f"Generating {num_bg} background images")
         for _ in range(num_bg):
-            background_list.append(generate_grass_background())
+            background_list.append(generate_grass_background() if np.random.uniform() < 0.8 else generate_gravel_background())
 
     return background_list
 
@@ -798,14 +830,14 @@ Examples:
     )
     parser.add_argument(
         "--width",
-        help=f"Width of generated images in pixels (default: {DEFAULT_IMG_WIDTH})",
-        default=DEFAULT_IMG_WIDTH,
+        help=f"Width of generated images in pixels (default: {IMG_WIDTH})",
+        default=IMG_WIDTH,
         type=int,
     )
     parser.add_argument(
         "--height",
-        help=f"Height of generated images in pixels (default: {DEFAULT_IMG_HEIGHT})",
-        default=DEFAULT_IMG_HEIGHT,
+        help=f"Height of generated images in pixels (default: {IMG_HEIGHT})",
+        default=IMG_HEIGHT,
         type=int,
     )
     parser.add_argument(
@@ -835,8 +867,8 @@ Examples:
 
     args = parser.parse_args()
     VERBOSE = args.verbose
-    DEFAULT_IMG_WIDTH = args.width
-    DEFAULT_IMG_HEIGHT = args.height
+    IMG_WIDTH = args.width
+    IMG_HEIGHT = args.height
     TARGET_DIR = args.target_dir
     BG_DIR = args.bg_dir
     DATA_DIR = args.data_dir
