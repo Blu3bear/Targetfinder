@@ -22,7 +22,7 @@ from ultralytics import YOLO
 # CONFIGURATION / CONSTANTS
 # =============================================================================
 
-DEFAULT_MODEL = "yolo11n-obb.pt"  # YOLOv11 nano model
+DEFAULT_MODEL = "yolo11n-obb.pt"  # YOLOv11 nano model, obb version
 DATA_YAML = Path("data.yaml")
 DEFAULT_EPOCHS = 50
 DEFAULT_IMG_SIZE = 640

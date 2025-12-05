@@ -11,16 +11,16 @@ Usage:
     python targetGenerator.py -n 500                # Append 500 images to existing dataset
 """
 
-import os
-import shutil
-import yaml
 import argparse
+import os
+import random
+import shutil
 from pathlib import Path
-from typing import Tuple, List, Optional
+from typing import List, Optional, Tuple
 
-from PIL import Image, ImageDraw
 import numpy as np
-
+import yaml
+from PIL import Image, ImageDraw
 
 # =============================================================================
 # CONFIGURATION / CONSTANTS
@@ -442,17 +442,14 @@ def get_next_image_index(obj_dir: Path) -> int:
 
     next_ind = 0
     for file in os.scandir(obj_dir):
-        if "img_" in file.name:
+        if ".jpg" in file.name:
             next_ind += 1
     return next_ind
 
 
 def save_image_and_annotation(
     image: Image.Image,
-    bbox: (
-        Tuple[float, float, float, float]
-        | Tuple[float, float, float, float, float, float, float, float]
-    ),
+    annotation: str,
     index: int,
     obj_dir: Path = OBJ_DIR,
 ) -> Path:
@@ -468,11 +465,15 @@ def save_image_and_annotation(
     Returns:
         Path to the saved image file.
     """
-    # TODO: Implement saving
-    # - Save image as img_{index}.jpg
-    # - Save annotation as img_{index}.txt
-    raise NotImplementedError("save_image_and_annotation not yet implemented")
 
+    file_path = obj_dir/f"img_{index}"
+
+    image.save(f"{file_path}.jpg")
+
+    with open(f"{file_path}.txt", 'at') as text_file:
+        text_file.write(annotation)
+
+    return Path(f"{file_path}.jpg")
 
 def update_data_files(
     image_paths: List[Path], training_split: int, append: bool = True
@@ -485,12 +486,28 @@ def update_data_files(
         training_split: Percentage of images to use for training (0-100).
         append: If True, append to existing files. If False, overwrite.
     """
-    # TODO: Implement file updates
-    # - Shuffle the image paths
-    # - Split according to training_split percentage
-    # - Write/append to train.txt and valid.txt
-    # - Write/append all to alldata.txt
-    raise NotImplementedError("update_data_files not yet implemented")
+
+    num_images = len(image_paths)
+    # we first make the valid set since it is likely to be the smallest of the two
+    num_valid = num_images//(100-training_split)
+
+    valid_paths = random.sample(image_paths, num_valid)
+    train_paths = list(set(image_paths)-set(valid_paths))
+
+    if append:
+        with open(ALLDATA_TXT,"at") as alldata:
+            alldata.writelines(map(lambda path: str(path)+"\n",image_paths))
+        with open(TRAIN_TXT, "at") as traindata:
+            traindata.writelines(map(lambda path: str(path)+"\n",train_paths))
+        with open(VALID_TXT, "at") as validdata:
+            validdata.writelines(map(lambda path: str(path)+"\n",valid_paths))
+    else:
+        with open(ALLDATA_TXT,"wt") as alldata:
+            alldata.writelines(map(lambda path: str(path)+"\n",image_paths))
+        with open(TRAIN_TXT, "wt") as traindata:
+            traindata.writelines(map(lambda path: str(path)+"\n",train_paths))
+        with open(VALID_TXT, "wt") as validdata:
+            validdata.writelines(map(lambda path: str(path)+"\n",valid_paths))
 
 
 def update_data_yaml(num_classes: int = 1, class_names: List[str] = ["TARGET"]) -> None:
@@ -502,21 +519,21 @@ def update_data_yaml(num_classes: int = 1, class_names: List[str] = ["TARGET"]) 
         class_names: List of class names.
     """
     # Load in current data.yaml
-    with open("data.yaml",'r') as file:
+    with open(DATA_YAML,'r') as file:
         data_dict: dict = yaml.safe_load(file)
 
     # Make sure the data paths are in the yaml
     if not data_dict.get("train",None):
-        data_dict["train"] = "data/train.txt"
+        data_dict["train"] = str(TRAIN_TXT)
     if not data_dict.get("val", None):
-        data_dict["val"] = "data/valid.txt"
+        data_dict["val"] = str(VALID_TXT)
 
     # Set the class fields
     data_dict["nc"] = num_classes
     data_dict["names"] = class_names
 
-    # WRite the updated data.yaml
-    with open("data.yaml","w") as file:
+    # Write the updated data.yaml
+    with open(DATA_YAML,"wt") as file:
         yaml.dump(data_dict,file)
 
 
@@ -545,26 +562,26 @@ def setup_data_directory(clean: bool = False) -> None:
             shutil.rmtree(OBJ_DIR)
             os.makedirs(OBJ_DIR)
             for fname in text_files:
-                if os.path.isfile(f"data/{fname}"):
-                    os.remove(f"data/{fname}")
-                os.close(os.open(f"data/{fname}", flags=os.O_CREAT | os.O_TRUNC))
+                if os.path.isfile(DATA_DIR/fname):
+                    os.remove(DATA_DIR/fname)
+                os.close(os.open(DATA_DIR/fname, flags=os.O_CREAT | os.O_TRUNC))
 
-    elif os.path.isdir("data/"):
+    elif os.path.isdir(DATA_DIR):
         # obj/ doesn't exist, double check for data/
         os.makedirs(OBJ_DIR)
         for fname in text_files:
-            if os.path.isfile(f"data/{fname}"):
-                os.remove(f"data/{fname}")
-            os.close(os.open(f"data/{fname}", flags=os.O_CREAT | os.O_TRUNC))
+            if os.path.isfile(DATA_DIR/fname):
+                os.remove(DATA_DIR/fname)
+            os.close(os.open(DATA_DIR/fname, flags=os.O_CREAT | os.O_TRUNC))
     else:
         # Directories don't exist
         os.makedirs(OBJ_DIR)
         for fname in text_files:
-            os.close(os.open(f"data/{fname}", flags=os.O_CREAT | os.O_TRUNC))
+            os.close(os.open(DATA_DIR/fname, flags=os.O_CREAT | os.O_TRUNC))
 
     if clean:
-        with open("data.yaml", "w") as file:
-            yaml.dump({"train": "data/train.txt", "val": "data/valid.txt"}, file)
+        with open(DATA_YAML, "wt") as file:
+            yaml.dump({"train": str(TRAIN_TXT), "val": str(VALID_TXT)}, file)
 
 
 # =============================================================================
@@ -610,9 +627,9 @@ def generate_image(
     composition.paste(im=oriented_target,box=(trans_x,trans_y),mask=oriented_target)
 
     # Calculate corners in PIL coordinates
-    obbox = get_obbox(trans_x,trans_y,rotation,new_size[0],new_size[0],oriented_target.size[0],oriented_target.size[1])
+    obbox = get_obbox(trans_x,trans_y,rotation,new_size[0],new_size[1],oriented_target.size[0],oriented_target.size[1])
     # normalize to 0-1 for yolo
-    yolo_obbox = tuple(corner/target.size[i%2] for i,corner in enumerate(obbox))
+    yolo_obbox = tuple(corner/background.size[i%2] for i,corner in enumerate(obbox))
 
     #TODO: apply a tranformation to give some more perspective to the target
 
@@ -658,9 +675,12 @@ def generate_dataset(num_images: int, training_split: int, clean: bool = False) 
         # Put the target on the background
         gen, bbox = generate_image(bg,target)
 
+        # TODO: add support for more than one type of class
+        annotation = generate_yolo_annotation(0,bbox)
+
         # Save the image in the directory,
         # and save the path to list to later write alldata.txt train.txt and val.txt
-        data_list.append(save_image_and_annotation(gen,bbox,starting_index+idx))
+        data_list.append(save_image_and_annotation(gen,annotation,starting_index+idx))
 
     update_data_files(data_list, training_split, not clean)
 
