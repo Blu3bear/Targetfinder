@@ -1,4 +1,4 @@
 ultralytics
 pillow
 numpy
-bboxconverter
+yaml
