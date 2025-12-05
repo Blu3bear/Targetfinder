@@ -16,11 +16,11 @@ import os
 import random
 import shutil
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional, Iterable
 
 import numpy as np
 import yaml
-from PIL import Image, ImageDraw
+from PIL import Image
 
 # =============================================================================
 # CONFIGURATION / CONSTANTS
@@ -32,6 +32,8 @@ TRAIN_TXT = DATA_DIR / "train.txt"
 VALID_TXT = DATA_DIR / "valid.txt"
 ALLDATA_TXT = DATA_DIR / "alldata.txt"
 DATA_YAML = Path("data.yaml")
+TARGET_DIR = Path("target")
+BG_DIR = Path("backgrounds")
 
 # Default image dimensions
 DEFAULT_IMG_WIDTH = 640
@@ -91,7 +93,7 @@ def generate_grass_background(
 
 def load_background_images(
     background_dir: Optional[Path] = None, num_bg: int = 5
-) -> List[Image.Image]:
+) -> list[Image.Image]:
     """
     Load background images from a directory, or generate procedural ones.
 
@@ -132,20 +134,6 @@ def load_background_images(
             background_list.append(generate_grass_background())
 
     return background_list
-    """
-    Select a random background from the available options.
-
-    Args:
-        backgrounds: List of available background images.
-
-    Returns:
-        A copy of a randomly selected background image.
-    """
-
-    # Get random index in the list
-    idx = np.random.randint(0, len(backgrounds))
-    # return the item at the index
-    return backgrounds[idx]
 
 
 # =============================================================================
@@ -166,14 +154,19 @@ def generate_ukrainian_flag(width: int = 90, height: int = 60) -> Image.Image:
     """
 
     top_half = np.ones((int(height // 2), width, 4)) * (*UKRAINE_BLUE, 255)
-    bottom_half = np.ones((int(height // 2 + height % 2), width, 4)) * (*UKRAINE_YELLOW, 255)
+    bottom_half = np.ones((int(height // 2 + height % 2), width, 4)) * (
+        *UKRAINE_YELLOW,
+        255,
+    )
 
     flag = np.concatenate((top_half, bottom_half))
 
-    return Image.fromarray(flag.astype(np.uint8), mode='RGBA')
+    return Image.fromarray(flag.astype(np.uint8), mode="RGBA")
 
 
-def load_target_images(target_dir: Optional[Path] = None) -> Tuple[List[Image.Image],List[str]]:
+def load_target_images(
+    target_dir: Optional[Path] = None,
+) -> dict[str, list[Image.Image]]:
     """
     Load target images from a directory, or generate procedural ones.
 
@@ -182,13 +175,10 @@ def load_target_images(target_dir: Optional[Path] = None) -> Tuple[List[Image.Im
                    If None or empty, generates procedural targets (Ukrainian flag).
 
     Returns:
-        List of PIL Images to use as targets.
+        A dict containing classes mapping to lists of images to use for targets
     """
 
-    target_list = []
-
-    # TODO: update the class list based on the file structure of target_dir
-    class_list = ["target"]
+    target_dict = {"target": []} if not target_dir else {target_dir.name: []}
 
     if VERBOSE:
         print("Loading in targets...")
@@ -196,24 +186,37 @@ def load_target_images(target_dir: Optional[Path] = None) -> Tuple[List[Image.Im
     if not target_dir or os.path.isdir(target_dir):
         # Directory exists, now check for not empty
         for file in os.scandir(target_dir):
-            try:
-                target_list.append(Image.open(file.path))
-            except Exception as e:
-                print(f"Couldn't open image {file.path} with exception {e}")
-        if not target_list:
+            if not os.path.isdir(file):
+                try:
+                    target_dict[target_dir.name].append(Image.open(file.path))
+                except Exception as e:
+                    print(f"Couldn't open image {file.path} with exception {e}")
+            else:
+                target_dict[file.name] = []
+                for target in os.scandir(file):
+                    try:
+                        target_dict[file.name].append(Image.open(target.path))
+                    except Exception as e:
+                        print(f"Couldn't open image {file.path} with exception {e}")
+        if not any(target_dict.values()):
             print(
                 f"WARNING: Target directory empty!!! \n Generating a Ukraine Flag image"
             )
-            target_list.append(generate_ukrainian_flag())
-        elif VERBOSE:
-            print(f"Done, found {len(target_list)} targets!")
+            target_dict[target_dir.name].append(generate_ukrainian_flag())
+        else:
+            if not target_dict[target_dir.name]:
+                del target_dict[target_dir.name]
+            if VERBOSE:
+                print(
+                    f"Done, found {sum(len(target_list) for target_list in target_dict.values())} targets!"
+                )
     else:
         # No directory, generating an image
         if VERBOSE:
             print(f"Generating a Ukraine Flag image")
-        target_list.append(generate_ukrainian_flag())
+        target_dict["target"].append(generate_ukrainian_flag())
 
-    return target_list, class_list
+    return target_dict
 
 
 # =============================================================================
@@ -221,7 +224,7 @@ def load_target_images(target_dir: Optional[Path] = None) -> Tuple[List[Image.Im
 # =============================================================================
 
 
-def get_random_item(candidates: List[Image.Image]) -> Image.Image:
+def get_random_item(candidates: list[Image.Image]) -> Image.Image:
     """
     Select a random item from the available options.
 
@@ -237,36 +240,45 @@ def get_random_item(candidates: List[Image.Image]) -> Image.Image:
     # return the item at the index
     return candidates[idx]
 
-def get_obbox(trans_x: int, trans_y: int, theta: float, width: int, height: int, super_width: int, super_height: int) -> Tuple[int,int,int,int,int,int,int,int]:
+
+def get_obbox(
+    trans_x: int,
+    trans_y: int,
+    theta: float,
+    width: int,
+    height: int,
+    super_width: int,
+    super_height: int,
+) -> tuple[float, float, float, float, float, float, float, float]:
     """Calculates the oriented bounding box of a target given its translation, size and orientation
 
     Args:
         trans_x (int): The amount the target was translated in the x direction
         trans_y (int): The amount the target was translated in the y direction
         theta (float): the amount the target was rotated in degrees
-        width (int): the width of the target(post scaling)
-        height (int): the width of the target(post scaling)
-        super_width (int): the width of the target image(post scaling and rotating)
-        super_height (int): the width of the target image(post scaling and rotating)
+        width (int): the width of the target (post scaling)
+        height (int): the height of the target (post scaling)
+        super_width (int): the width of the target image (post scaling and rotating)
+        super_height (int): the height of the target image (post scaling and rotating)
 
     Returns:
-        Tuple[int,int,int,int,int,int,int,int]: A bounding box in the form of x1,y1,x2,y2,x3,y3,x4,y4 where x1,y1 is the upper left corner and the following coordinates move clockwise around the image. Not yet normalized for yolo obb
+        tuple[float, float, float, float, float, float, float, float]: A bounding box in the form of x1,y1,x2,y2,x3,y3,x4,y4 where x1,y1 is the upper left corner and the following coordinates move clockwise around the image. Not yet normalized for yolo obb
     """
     # PIL rotates counter-clockwise, so we negate the angle
     theta_rad = np.deg2rad(-theta)
-    
+
     # The center of the rotated image (super bounding box)
     cx = trans_x + super_width / 2
     cy = trans_y + super_height / 2
-    
-    # Corners of the unrotated rectangle relative to center: 
+
+    # Corners of the unrotated rectangle relative to center:
     corners_rel = [
-        (-width/2, -height/2),  # top-left
-        (width/2, -height/2),   # top-right  
-        (width/2, height/2),    # bottom-right
-        (-width/2, height/2),   # bottom-left
+        (-width / 2, -height / 2),  # top-left
+        (width / 2, -height / 2),  # top-right
+        (width / 2, height / 2),  # bottom-right
+        (-width / 2, height / 2),  # bottom-left
     ]
-    
+
     rotated_corners = []
     for rx, ry in corners_rel:
         # Apply rotation
@@ -274,13 +286,14 @@ def get_obbox(trans_x: int, trans_y: int, theta: float, width: int, height: int,
         new_y = rx * np.sin(theta_rad) + ry * np.cos(theta_rad)
         # Translate to actual position
         rotated_corners.append((cx + new_x, cy + new_y))
-    
+
     x1, y1 = rotated_corners[0]
     x2, y2 = rotated_corners[1]
     x3, y3 = rotated_corners[2]
     x4, y4 = rotated_corners[3]
 
     return (x1, y1, x2, y2, x3, y3, x4, y4)
+
 
 # =============================================================================
 # AUGMENTATIONS
@@ -307,7 +320,7 @@ def apply_augmentations(
 
 
 def augment_hue_shift(
-    image: Image.Image, shift_range: Tuple[int, int] = (-30, 30)
+    image: Image.Image, shift_range: tuple[int, int] = (-30, 30)
 ) -> Image.Image:
     """
     Shift the hue of the image by a random amount.
@@ -324,7 +337,7 @@ def augment_hue_shift(
 
 
 def augment_saturation(
-    image: Image.Image, factor_range: Tuple[float, float] = (0.5, 1.5)
+    image: Image.Image, factor_range: tuple[float, float] = (0.5, 1.5)
 ) -> Image.Image:
     """
     Adjust the saturation of the image by a random factor.
@@ -356,7 +369,7 @@ def augment_salt_noise(image: Image.Image, density: float = 0.01) -> Image.Image
 
 
 def augment_random_lines(
-    image: Image.Image, num_lines_range: Tuple[int, int] = (1, 5)
+    image: Image.Image, num_lines_range: tuple[int, int] = (1, 5)
 ) -> Image.Image:
     """
     Draw random lines on the image.
@@ -373,7 +386,7 @@ def augment_random_lines(
 
 
 def augment_rotation(
-    image: Image.Image, angle_range: Tuple[float, float] = (-15, 15)
+    image: Image.Image, angle_range: tuple[float, float] = (-15, 15)
 ) -> Image.Image:
     """
     Rotate the entire image by a random angle.
@@ -410,18 +423,23 @@ def augment_pixel_shift(image: Image.Image, max_shift: int = 5) -> Image.Image:
 
 
 def generate_yolo_annotation(
-    class_id: int, bbox: Tuple[float, float, float, float]
-        | Tuple[float, float, float, float, float, float, float, float]
+    class_id: int,
+    bbox: (
+        tuple[float, float, float, float]
+        | tuple[float, float, float, float, float, float, float, float]
+    ),
 ) -> str:
     """
     Generate a YOLO format annotation string.
 
     Args:
         class_id: The class ID for the object (0 for TARGET).
-        bbox: Bounding box as (x_center, y_center, width, height) normalized to [0, 1].
+        bbox: Bounding box normalized to [0, 1]. Either standard format
+              (x_center, y_center, width, height) or OBB format
+              (x1, y1, x2, y2, x3, y3, x4, y4) with corner coordinates.
 
     Returns:
-        YOLO annotation string: "class_id x_center y_center width height"
+        YOLO annotation string: "class_id coord1 coord2 ..." with all bbox values.
     """
 
     return f"{class_id}" + "".join(f" {coord}" for coord in bbox)
@@ -458,7 +476,7 @@ def save_image_and_annotation(
 
     Args:
         image: The generated image to save.
-        bbox: YOLO format bounding box.
+        annotation: YOLO format annotation string.
         index: Image index for filename.
         obj_dir: Directory to save files to.
 
@@ -466,17 +484,18 @@ def save_image_and_annotation(
         Path to the saved image file.
     """
 
-    file_path = obj_dir/f"img_{index}"
+    file_path = obj_dir / f"img_{index}"
 
     image.save(f"{file_path}.jpg")
 
-    with open(f"{file_path}.txt", 'at') as text_file:
+    with open(f"{file_path}.txt", "at") as text_file:
         text_file.write(annotation)
 
     return Path(f"{file_path}.jpg")
 
+
 def update_data_files(
-    image_paths: List[Path], training_split: int, append: bool = True
+    image_paths: list[Path], training_split: int, append: bool = True
 ) -> None:
     """
     Update train.txt, valid.txt, and alldata.txt with new image paths.
@@ -489,52 +508,53 @@ def update_data_files(
 
     num_images = len(image_paths)
     # we first make the valid set since it is likely to be the smallest of the two
-    num_valid = num_images//(100-training_split)
+    num_valid = num_images // (100 - training_split)
 
     valid_paths = random.sample(image_paths, num_valid)
-    train_paths = list(set(image_paths)-set(valid_paths))
+    train_paths = list(set(image_paths) - set(valid_paths))
 
     if append:
-        with open(ALLDATA_TXT,"at") as alldata:
-            alldata.writelines(map(lambda path: str(path)+"\n",image_paths))
+        with open(ALLDATA_TXT, "at") as alldata:
+            alldata.writelines(map(lambda path: str(path) + "\n", image_paths))
         with open(TRAIN_TXT, "at") as traindata:
-            traindata.writelines(map(lambda path: str(path)+"\n",train_paths))
+            traindata.writelines(map(lambda path: str(path) + "\n", train_paths))
         with open(VALID_TXT, "at") as validdata:
-            validdata.writelines(map(lambda path: str(path)+"\n",valid_paths))
+            validdata.writelines(map(lambda path: str(path) + "\n", valid_paths))
     else:
-        with open(ALLDATA_TXT,"wt") as alldata:
-            alldata.writelines(map(lambda path: str(path)+"\n",image_paths))
+        with open(ALLDATA_TXT, "wt") as alldata:
+            alldata.writelines(map(lambda path: str(path) + "\n", image_paths))
         with open(TRAIN_TXT, "wt") as traindata:
-            traindata.writelines(map(lambda path: str(path)+"\n",train_paths))
+            traindata.writelines(map(lambda path: str(path) + "\n", train_paths))
         with open(VALID_TXT, "wt") as validdata:
-            validdata.writelines(map(lambda path: str(path)+"\n",valid_paths))
+            validdata.writelines(map(lambda path: str(path) + "\n", valid_paths))
 
 
-def update_data_yaml(num_classes: int = 1, class_names: List[str] = ["TARGET"]) -> None:
+def update_data_yaml(class_names: Iterable[any] = ["TARGET"]) -> None:
     """
     Update or create the data.yaml configuration file.
 
     Args:
-        num_classes: Number of object classes.
         class_names: List of class names.
     """
     # Load in current data.yaml
-    with open(DATA_YAML,'r') as file:
+    with open(DATA_YAML, "r") as file:
         data_dict: dict = yaml.safe_load(file)
 
     # Make sure the data paths are in the yaml
-    if not data_dict.get("train",None):
+    if not data_dict.get("train", None):
         data_dict["train"] = str(TRAIN_TXT)
     if not data_dict.get("val", None):
         data_dict["val"] = str(VALID_TXT)
 
+    if not type(class_names) == list:
+        class_names = list(class_names)
     # Set the class fields
-    data_dict["nc"] = num_classes
+    data_dict["nc"] = len(class_names)
     data_dict["names"] = class_names
 
     # Write the updated data.yaml
-    with open(DATA_YAML,"wt") as file:
-        yaml.dump(data_dict,file)
+    with open(DATA_YAML, "wt") as file:
+        yaml.dump(data_dict, file)
 
 
 # =============================================================================
@@ -562,22 +582,22 @@ def setup_data_directory(clean: bool = False) -> None:
             shutil.rmtree(OBJ_DIR)
             os.makedirs(OBJ_DIR)
             for fname in text_files:
-                if os.path.isfile(DATA_DIR/fname):
-                    os.remove(DATA_DIR/fname)
-                os.close(os.open(DATA_DIR/fname, flags=os.O_CREAT | os.O_TRUNC))
+                if os.path.isfile(DATA_DIR / fname):
+                    os.remove(DATA_DIR / fname)
+                os.close(os.open(DATA_DIR / fname, flags=os.O_CREAT | os.O_TRUNC))
 
     elif os.path.isdir(DATA_DIR):
         # obj/ doesn't exist, double check for data/
         os.makedirs(OBJ_DIR)
         for fname in text_files:
-            if os.path.isfile(DATA_DIR/fname):
-                os.remove(DATA_DIR/fname)
-            os.close(os.open(DATA_DIR/fname, flags=os.O_CREAT | os.O_TRUNC))
+            if os.path.isfile(DATA_DIR / fname):
+                os.remove(DATA_DIR / fname)
+            os.close(os.open(DATA_DIR / fname, flags=os.O_CREAT | os.O_TRUNC))
     else:
         # Directories don't exist
         os.makedirs(OBJ_DIR)
         for fname in text_files:
-            os.close(os.open(DATA_DIR/fname, flags=os.O_CREAT | os.O_TRUNC))
+            os.close(os.open(DATA_DIR / fname, flags=os.O_CREAT | os.O_TRUNC))
 
     if clean:
         with open(DATA_YAML, "wt") as file:
@@ -593,48 +613,60 @@ def generate_image(
     background: Image.Image,
     target: Image.Image,
     apply_augmentation: bool = True,
-) -> Tuple[Image.Image, Tuple[float, float, float, float,float, float, float, float]]:
+) -> tuple[Image.Image, tuple[float, float, float, float, float, float, float, float]]:
     """
     Generate a single synthetic training image.
 
     Args:
         background: The background Image.
-        targets: The target Image.
+        target: The target Image to overlay onto the background.
         apply_augmentation: Whether to apply random augmentations.
 
     Returns:
-        Tuple of (generated_image, yolo_bbox).
+        Tuple of (generated_image, yolo_obbox) where yolo_obbox is an 8-value
+        oriented bounding box (x1, y1, x2, y2, x3, y3, x4, y4) normalized to [0, 1].
     """
 
     # Scaling factor for scaling the image
-    scale = np.random.normal(1.0,0.1)
+    scale = np.random.normal(1.0, 0.1)
 
     # Angle for rotation
-    rotation = np.random.randint(0,360)
+    rotation = np.random.randint(0, 360)
 
-    new_size = (round(target.size[0]*scale),round(target.size[1]*scale))
+    new_size = (round(target.size[0] * scale), round(target.size[1] * scale))
 
     # scale and rotate
-    oriented_target = target.resize(new_size,Image.Resampling.HAMMING).rotate(rotation,Image.Resampling.BILINEAR,True,fillcolor=(0,0,0,0))
+    oriented_target = target.resize(new_size, Image.Resampling.HAMMING).rotate(
+        rotation, Image.Resampling.BILINEAR, True, fillcolor=(0, 0, 0, 0)
+    )
 
-    trans_x = np.random.randint(0,background.size[0]-oriented_target.size[0])
-    trans_y = np.random.randint(0,background.size[1]-oriented_target.size[1])
+    trans_x = np.random.randint(0, background.size[0] - oriented_target.size[0])
+    trans_y = np.random.randint(0, background.size[1] - oriented_target.size[1])
 
     # Paste and translate the reorented target onto the background
     # the mask makes sure that we dont delete neighboring pixels due to the rotation
     # the .copy ensures that that background remains unmodified and a new image is created
     composition = background.copy()
-    composition.paste(im=oriented_target,box=(trans_x,trans_y),mask=oriented_target)
+    composition.paste(im=oriented_target, box=(trans_x, trans_y), mask=oriented_target)
 
     # Calculate corners in PIL coordinates
-    obbox = get_obbox(trans_x,trans_y,rotation,new_size[0],new_size[1],oriented_target.size[0],oriented_target.size[1])
+    obbox = get_obbox(
+        trans_x,
+        trans_y,
+        rotation,
+        new_size[0],
+        new_size[1],
+        oriented_target.size[0],
+        oriented_target.size[1],
+    )
     # normalize to 0-1 for yolo
-    yolo_obbox = tuple(corner/background.size[i%2] for i,corner in enumerate(obbox))
+    yolo_obbox = tuple(
+        corner / background.size[i % 2] for i, corner in enumerate(obbox)
+    )
 
-    #TODO: apply a tranformation to give some more perspective to the target
+    # TODO: apply a tranformation to give some more perspective to the target
 
-
-    #if augment is enabled randomly choose to apply one or more
+    # if augment is enabled randomly choose to apply one or more
 
     return composition, yolo_obbox
 
@@ -656,31 +688,34 @@ def generate_dataset(num_images: int, training_split: int, clean: bool = False) 
     setup_data_directory(clean)
 
     # Get a list of backgrounds
-    backGrounds = load_background_images("backgrounds/")
+    backGrounds = load_background_images(BG_DIR)
 
     # Get a list of targets
-    targets, classes = load_target_images("targets/")
+    targets = load_target_images(TARGET_DIR)
 
-    update_data_yaml(len(classes),classes)
+    update_data_yaml(targets.keys())
 
     starting_index = get_next_image_index(OBJ_DIR)
     data_list = []
 
-    for idx in range(num_images):
-        # Pick a background
-        bg = get_random_item(backGrounds)
-        # Pick a target
-        target = get_random_item(targets)
+    for class_id, target_list in enumerate(targets.values()):
+        for idx in range(num_images):
+            # Pick a background
+            bg = get_random_item(backGrounds)
+            # Pick a target
+            target = get_random_item(target_list)
 
-        # Put the target on the background
-        gen, bbox = generate_image(bg,target)
+            # Put the target on the background
+            gen, bbox = generate_image(bg, target)
 
-        # TODO: add support for more than one type of class
-        annotation = generate_yolo_annotation(0,bbox)
+            # TODO: add support for more than one type of class
+            annotation = generate_yolo_annotation(class_id, bbox)
 
-        # Save the image in the directory,
-        # and save the path to list to later write alldata.txt train.txt and val.txt
-        data_list.append(save_image_and_annotation(gen,annotation,starting_index+idx))
+            # Save the image in the directory,
+            # and save the path to list to later write alldata.txt train.txt and val.txt
+            data_list.append(
+                save_image_and_annotation(gen, annotation, starting_index + idx)
+            )
 
     update_data_files(data_list, training_split, not clean)
 
