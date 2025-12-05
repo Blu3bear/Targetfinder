@@ -12,187 +12,65 @@ Usage:
 """
 
 import argparse
-from pathlib import Path
-from typing import Optional, Dict, Any
+import os
 
 from ultralytics import YOLO
 
-
-# =============================================================================
-# CONFIGURATION / CONSTANTS
-# =============================================================================
-
 DEFAULT_MODEL = "yolo11n-obb.pt"  # YOLOv11 nano model, obb version
-DATA_YAML = Path("data.yaml")
-DEFAULT_EPOCHS = 50
-DEFAULT_IMG_SIZE = 640
-DEFAULT_BATCH_SIZE = 16
 
-
-# =============================================================================
-# TRAINING FUNCTIONS
-# =============================================================================
-
-def load_model(model_path: str = DEFAULT_MODEL) -> YOLO:
-    """
-    Load a YOLO model for training or tuning.
-    
-    Args:
-        model_path: Path to the model weights or model name.
-        
-    Returns:
-        Loaded YOLO model instance.
-    """
-    # TODO: Implement model loading with error handling
-    raise NotImplementedError("load_model not yet implemented")
-
-
-def train_model(model: YOLO,
-                data_yaml: Path = DATA_YAML,
-                epochs: int = DEFAULT_EPOCHS,
-                img_size: int = DEFAULT_IMG_SIZE,
-                batch_size: int = DEFAULT_BATCH_SIZE,
-                hyperparameters: Optional[Dict[str, Any]] = None) -> None:
-    """
-    Train the YOLO model with specified parameters.
-    
-    Args:
-        model: The YOLO model instance.
-        data_yaml: Path to the data configuration file.
-        epochs: Number of training epochs.
-        img_size: Input image size.
-        batch_size: Training batch size.
-        hyperparameters: Optional dictionary of additional hyperparameters.
-    """
-    # TODO: Implement training
-    # - Call model.train() with appropriate parameters
-    # - Handle any custom hyperparameters
-    raise NotImplementedError("train_model not yet implemented")
-
-
-def tune_model(model: YOLO,
-               data_yaml: Path = DATA_YAML,
-               epochs: int = DEFAULT_EPOCHS,
-               iterations: int = 30,
-               img_size: int = DEFAULT_IMG_SIZE) -> None:
-    """
-    Run hyperparameter tuning on the YOLO model.
-    
-    Uses Ultralytics' built-in Ray Tune integration for hyperparameter search.
-    
-    Args:
-        model: The YOLO model instance.
-        data_yaml: Path to the data configuration file.
-        epochs: Number of epochs per tuning trial.
-        iterations: Number of tuning iterations.
-        img_size: Input image size.
-    """
-    # TODO: Implement hyperparameter tuning
-    # - Call model.tune() with appropriate parameters
-    raise NotImplementedError("tune_model not yet implemented")
-
-
-def validate_model(model: YOLO, data_yaml: Path = DATA_YAML) -> None:
-    """
-    Validate a trained YOLO model on the validation dataset.
-    
-    Args:
-        model: The trained YOLO model instance.
-        data_yaml: Path to the data configuration file.
-    """
-    # TODO: Implement validation
-    # - Call model.val() with appropriate parameters
-    # - Print validation metrics
-    raise NotImplementedError("validate_model not yet implemented")
-
-
-def export_model(model: YOLO, format: str = "onnx") -> None:
-    """
-    Export the trained model to a different format.
-    
-    Args:
-        model: The trained YOLO model instance.
-        format: Export format (e.g., 'onnx', 'torchscript', 'tflite').
-    """
-    # TODO: Implement model export
-    raise NotImplementedError("export_model not yet implemented")
-
-
-# =============================================================================
-# UTILITY FUNCTIONS
-# =============================================================================
-
-def verify_data_yaml(data_yaml: Path = DATA_YAML) -> bool:
-    """
-    Verify that the data.yaml file exists and is properly configured.
-    
-    Args:
-        data_yaml: Path to the data configuration file.
-        
-    Returns:
-        True if valid, False otherwise.
-    """
-    # TODO: Implement data.yaml verification
-    # - Check file exists
-    # - Parse YAML and verify required fields
-    # - Check that referenced directories/files exist
-    raise NotImplementedError("verify_data_yaml not yet implemented")
-
-
-def print_training_summary(results: Any) -> None:
-    """
-    Print a summary of training results.
-    
-    Args:
-        results: Training results from model.train().
-    """
-    # TODO: Implement results summary printing
-    raise NotImplementedError("print_training_summary not yet implemented")
-
-
-# =============================================================================
-# MAIN ENTRY POINT
-# =============================================================================
 
 def main(args: argparse.Namespace) -> None:
     """
     Main entry point for the YOLO tuner/trainer.
-    
+
     Args:
         args: Parsed command line arguments.
     """
     print("YOLO Target Detector Trainer")
     print(f"  Model: {args.model}")
-    print(f"  Data config: {DATA_YAML}")
     print()
-    
+
     # Verify data.yaml exists
-    if not DATA_YAML.exists():
-        print(f"Error: {DATA_YAML} not found. Run targetGenerator.py first.")
-        return
-    
+    assert os.path.isfile(
+        "data.yaml"
+    ), f"Error: data.yaml not found. Run targetGenerator.py first."
+
     # Load model
-    model = load_model(args.model)
-    
+    model = YOLO(args.model)
+
     if args.tune:
         print(f"Starting hyperparameter tuning ({args.iterations} iterations)...")
-        tune_model(
-            model=model,
-            epochs=args.epochs,
+        model.tune(
+            data="data.yaml",
+            augment=True,
+            hsv_h=0.015,
+            hsv_s=0.7,
+            hsv_v=0.4,
+            degrees=5.0,
+            shear=0.1,
+            translate=0.1,
+            scale=0.5,
+            flipud=0.5,
+            fliplr=0.5,
+            imgsz=args.img_size,
+            device=0,
+            batch=args.batch_size,
             iterations=args.iterations,
-            img_size=args.img_size
         )
     elif args.train:
         print(f"Starting training ({args.epochs} epochs)...")
-        train_model(
-            model=model,
+        model.train(
+            data="data.yaml",
             epochs=args.epochs,
-            img_size=args.img_size,
-            batch_size=args.batch_size
+            imgsz=args.img_size,
+            device=0,
+            batch=args.batch_size,
+            workers = args.workers,
+            patience = 30
         )
     elif args.validate:
         print("Running validation...")
-        validate_model(model)
+        model.val("data.yaml",imgsz = args.img_size)
     else:
         print("No action specified. Use --tune, --train, or --validate.")
         print("Run with --help for more information.")
@@ -209,63 +87,66 @@ Examples:
   python yoloTuner.py --train                    Train with default settings
   python yoloTuner.py --train --epochs 100       Train for 100 epochs
   python yoloTuner.py --validate                 Validate the current model
-        """
+        """,
     )
-    
+
     # Action arguments (mutually exclusive)
     action_group = parser.add_mutually_exclusive_group()
     action_group.add_argument(
-        "--tune",
-        help="Run hyperparameter tuning",
-        action="store_true"
+        "--tune", help="Run hyperparameter tuning", action="store_true"
     )
     action_group.add_argument(
-        "--train",
-        help="Run a single training session",
-        action="store_true"
+        "--train", help="Run a single training session", action="store_true"
     )
     action_group.add_argument(
         "--validate",
         help="Validate the model on the validation set",
-        action="store_true"
+        action="store_true",
     )
-    
+
     # Model configuration
     parser.add_argument(
         "--model",
         help=f"Model to use (default: {DEFAULT_MODEL})",
-        default=DEFAULT_MODEL
+        default=DEFAULT_MODEL,
     )
-    
+
     # Training parameters
     parser.add_argument(
         "--epochs",
-        help=f"Number of training epochs (default: {DEFAULT_EPOCHS})",
+        help=f"Number of training epochs (default: 50)",
         type=int,
-        default=DEFAULT_EPOCHS
+        default=50,
     )
     parser.add_argument(
         "--batch-size",
-        help=f"Batch size for training (default: {DEFAULT_BATCH_SIZE})",
+        help=f"Batch size for training (default: 14)",
         type=int,
-        default=DEFAULT_BATCH_SIZE,
-        dest="batch_size"
+        default=14,
+        dest="batch_size",
     )
     parser.add_argument(
         "--img-size",
-        help=f"Input image size (default: {DEFAULT_IMG_SIZE})",
+        help=f"Input image size (default: 640)",
         type=int,
-        default=DEFAULT_IMG_SIZE,
-        dest="img_size"
+        default=640,
+        dest="img_size",
     )
-    
+    parser.add_argument(
+        "--workers",
+        help="Number of threads to train/tune on (default: 8)",
+        type=int,
+        default=8,
+        dest="workers",
+    )
+
     # Tuning parameters
     parser.add_argument(
         "--iterations",
         help="Number of tuning iterations (default: 30)",
         type=int,
-        default=30
+        default=30,
     )
-    
+
     args = parser.parse_args()
     main(args)
