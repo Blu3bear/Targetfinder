@@ -423,8 +423,8 @@ def generate_yolo_annotation(
     Returns:
         YOLO annotation string: "class_id x_center y_center width height"
     """
-    # TODO: Implement YOLO annotation formatting
-    raise NotImplementedError("generate_yolo_annotation not yet implemented")
+
+    return f"{class_id}" + "".join(f" {coord}" for coord in bbox)
 
 
 def get_next_image_index(obj_dir: Path) -> int:
@@ -439,11 +439,12 @@ def get_next_image_index(obj_dir: Path) -> int:
     Returns:
         Next available integer index for image naming.
     """
-    # TODO: Implement index scanning
-    # - Find all existing img_*.jpg files
-    # - Extract indices and find max
-    # - Return max + 1 (or 0 if empty)
-    raise NotImplementedError("get_next_image_index not yet implemented")
+
+    next_ind = 0
+    for file in os.scandir(obj_dir):
+        if "img_" in file.name:
+            next_ind += 1
+    return next_ind
 
 
 def save_image_and_annotation(
@@ -538,11 +539,11 @@ def setup_data_directory(clean: bool = False) -> None:
     text_files = ["alldata.txt", "train.txt", "valid.txt"]
 
     # Check if directory exists
-    if os.path.isdir("data/obj/"):
+    if os.path.isdir(OBJ_DIR):
         # Directory alreaedy exists, if clean then clear it out
         if clean:
-            shutil.rmtree("data/obj/")
-            os.makedirs("data/obj/")
+            shutil.rmtree(OBJ_DIR)
+            os.makedirs(OBJ_DIR)
             for fname in text_files:
                 if os.path.isfile(f"data/{fname}"):
                     os.remove(f"data/{fname}")
@@ -550,14 +551,14 @@ def setup_data_directory(clean: bool = False) -> None:
 
     elif os.path.isdir("data/"):
         # obj/ doesn't exist, double check for data/
-        os.makedir("data/obj/")
+        os.makedirs(OBJ_DIR)
         for fname in text_files:
             if os.path.isfile(f"data/{fname}"):
                 os.remove(f"data/{fname}")
             os.close(os.open(f"data/{fname}", flags=os.O_CREAT | os.O_TRUNC))
     else:
         # Directories don't exist
-        os.makedirs("data/obj/")
+        os.makedirs(OBJ_DIR)
         for fname in text_files:
             os.close(os.open(f"data/{fname}", flags=os.O_CREAT | os.O_TRUNC))
 
@@ -594,7 +595,7 @@ def generate_image(
     # Angle for rotation
     rotation = np.random.randint(0,360)
 
-    new_size = (target.size[0]*scale,target.size[1]*scale)
+    new_size = (round(target.size[0]*scale),round(target.size[1]*scale))
 
     # scale and rotate
     oriented_target = target.resize(new_size,Image.Resampling.HAMMING).rotate(rotation,Image.Resampling.BILINEAR,True,fillcolor=(0,0,0,0))
@@ -609,9 +610,9 @@ def generate_image(
     composition.paste(im=oriented_target,box=(trans_x,trans_y),mask=oriented_target)
 
     # Calculate corners in PIL coordinates
-    obbox = get_obbox(trans_x,trans_y,rotation,new_size(0),new_size(1),oriented_target.size(0),oriented_target.size(1))
+    obbox = get_obbox(trans_x,trans_y,rotation,new_size[0],new_size[0],oriented_target.size[0],oriented_target.size[1])
     # normalize to 0-1 for yolo
-    yolo_obbox = tuple(corner/target.size(i%2) for i,corner in enumerate(obbox))
+    yolo_obbox = tuple(corner/target.size[i%2] for i,corner in enumerate(obbox))
 
     #TODO: apply a tranformation to give some more perspective to the target
 
@@ -645,7 +646,7 @@ def generate_dataset(num_images: int, training_split: int, clean: bool = False) 
 
     update_data_yaml(len(classes),classes)
 
-    starting_index = get_next_image_index("data/obj/")
+    starting_index = get_next_image_index(OBJ_DIR)
     data_list = []
 
     for idx in range(num_images):
