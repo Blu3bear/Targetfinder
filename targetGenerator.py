@@ -671,7 +671,9 @@ def generate_image(
     return composition, yolo_obbox
 
 
-def generate_dataset(num_images: int, training_split: int, clean: bool = False) -> None:
+def generate_dataset(
+    num_images: int, training_split: int, clean: bool = False, num_bg: int = 5
+) -> None:
     """
     Generate a complete dataset of synthetic training images.
 
@@ -679,6 +681,7 @@ def generate_dataset(num_images: int, training_split: int, clean: bool = False) 
         num_images: Total number of images to generate.
         training_split: Percentage of images for training (rest for validation).
         clean: If True, clear existing data before generating.
+        num_bg: Number of procedural backgrounds to generate if directory is empty.
     """
 
     if VERBOSE:
@@ -688,7 +691,7 @@ def generate_dataset(num_images: int, training_split: int, clean: bool = False) 
     setup_data_directory(clean)
 
     # Get a list of backgrounds
-    backGrounds = load_background_images(BG_DIR)
+    backGrounds = load_background_images(BG_DIR, num_bg)
 
     # Get a list of targets
     targets = load_target_images(TARGET_DIR)
@@ -737,10 +740,18 @@ def main(args: argparse.Namespace) -> None:
         print(f"  Images to generate: {args.number}")
         print(f"  Training split: {args.training_split}%")
         print(f"  Clean mode: {args.clean}")
+        print(f"  Image size: {args.width}x{args.height}")
+        print(f"  Target directory: {args.target_dir}")
+        print(f"  Background directory: {args.bg_dir}")
+        print(f"  Data directory: {args.data_dir}")
+        print(f"  Procedural backgrounds: {args.num_bg}")
         print()
 
     generate_dataset(
-        num_images=args.number, training_split=args.training_split, clean=args.clean
+        num_images=args.number,
+        training_split=args.training_split,
+        clean=args.clean,
+        num_bg=args.num_bg,
     )
 
     print("Dataset generation complete!")
@@ -785,7 +796,53 @@ Examples:
         help="Verbose mode, more information is printed in verbose mode",
         action="store_true",
     )
+    parser.add_argument(
+        "--width",
+        help=f"Width of generated images in pixels (default: {DEFAULT_IMG_WIDTH})",
+        default=DEFAULT_IMG_WIDTH,
+        type=int,
+    )
+    parser.add_argument(
+        "--height",
+        help=f"Height of generated images in pixels (default: {DEFAULT_IMG_HEIGHT})",
+        default=DEFAULT_IMG_HEIGHT,
+        type=int,
+    )
+    parser.add_argument(
+        "--target-dir",
+        help=f"Directory containing target images (default: {TARGET_DIR})",
+        default=TARGET_DIR,
+        type=Path,
+    )
+    parser.add_argument(
+        "--bg-dir",
+        help=f"Directory containing background images (default: {BG_DIR})",
+        default=BG_DIR,
+        type=Path,
+    )
+    parser.add_argument(
+        "--data-dir",
+        help=f"Directory for output data (default: {DATA_DIR})",
+        default=DATA_DIR,
+        type=Path,
+    )
+    parser.add_argument(
+        "--num-bg",
+        help="Number of procedural backgrounds to generate if bg-dir is empty (default: 5)",
+        default=5,
+        type=int,
+    )
 
     args = parser.parse_args()
     VERBOSE = args.verbose
+    DEFAULT_IMG_WIDTH = args.width
+    DEFAULT_IMG_HEIGHT = args.height
+    TARGET_DIR = args.target_dir
+    BG_DIR = args.bg_dir
+    DATA_DIR = args.data_dir
+    OBJ_DIR = DATA_DIR / "obj"
+    TRAIN_TXT = DATA_DIR / "train.txt"
+    VALID_TXT = DATA_DIR / "valid.txt"
+    ALLDATA_TXT = DATA_DIR / "alldata.txt"
+
     main(args)
