@@ -38,6 +38,7 @@ BG_DIR = Path("backgrounds")
 # Default image dimensions
 IMG_WIDTH = 640
 IMG_HEIGHT = 640
+BASE_SCALE = 1.0
 
 # Ukrainian flag colors (RGB)
 UKRAINE_BLUE = (0, 87, 183)
@@ -155,7 +156,11 @@ def load_background_images(
                 f"WARNING: Background directory empty!!! \n Generating {num_bg} background images"
             )
             for _ in range(num_bg):
-                background_list.append(generate_grass_background() if np.random.uniform() < 0.8 else generate_gravel_background())
+                background_list.append(
+                    generate_grass_background()
+                    if np.random.uniform() < 0.8
+                    else generate_gravel_background()
+                )
         elif VERBOSE:
             print(f"Done, found {len(background_list)} backgrounds!")
     else:
@@ -163,7 +168,11 @@ def load_background_images(
         if VERBOSE:
             print(f"Generating {num_bg} background images")
         for _ in range(num_bg):
-            background_list.append(generate_grass_background() if np.random.uniform() < 0.8 else generate_gravel_background())
+            background_list.append(
+                generate_grass_background()
+                if np.random.uniform() < 0.8
+                else generate_gravel_background()
+            )
 
     return background_list
 
@@ -220,14 +229,18 @@ def load_target_images(
         for file in os.scandir(target_dir):
             if not os.path.isdir(file):
                 try:
-                    target_dict[target_dir.name].append(Image.open(file.path))
+                    target_dict[target_dir.name].append(
+                        Image.open(file.path).convert("RGBA")
+                    )
                 except Exception as e:
                     print(f"Couldn't open image {file.path} with exception {e}")
             else:
                 target_dict[file.name] = []
                 for target in os.scandir(file):
                     try:
-                        target_dict[file.name].append(Image.open(target.path))
+                        target_dict[file.name].append(
+                            Image.open(target.path).convert("RGBA")
+                        )
                     except Exception as e:
                         print(f"Couldn't open image {file.path} with exception {e}")
         if not any(target_dict.values()):
@@ -660,7 +673,9 @@ def generate_image(
     """
 
     # Scaling factor for scaling the image
-    scale = np.random.normal(1.0, 0.1)
+    scale = np.random.normal(1.0, 0.25)*BASE_SCALE
+    # Make sure the scale is positive
+    scale = np.clip(scale,0.0,100.0)
 
     # Angle for rotation
     rotation = np.random.randint(0, 360)
@@ -864,6 +879,13 @@ Examples:
         default=5,
         type=int,
     )
+    parser.add_argument(
+        "-bs",
+        "--base-scale",
+        help="The initial fixed scaling of the target image.",
+        default=BASE_SCALE,
+        type=float,
+    )
 
     args = parser.parse_args()
     VERBOSE = args.verbose
@@ -872,6 +894,7 @@ Examples:
     TARGET_DIR = args.target_dir
     BG_DIR = args.bg_dir
     DATA_DIR = args.data_dir
+    BASE_SCALE = args.base_scale
     OBJ_DIR = DATA_DIR / "obj"
     TRAIN_TXT = DATA_DIR / "train.txt"
     VALID_TXT = DATA_DIR / "valid.txt"
