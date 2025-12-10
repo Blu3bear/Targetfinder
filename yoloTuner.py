@@ -65,12 +65,12 @@ def main(args: argparse.Namespace) -> None:
             imgsz=args.img_size,
             device=0,
             batch=args.batch_size,
-            workers = args.workers,
-            patience = 30
+            workers=args.workers,
+            patience=30,
         )
     elif args.validate:
         print("Running validation...")
-        model.val("data.yaml",imgsz = args.img_size)
+        model.val("data.yaml", imgsz=args.img_size)
     else:
         print("No action specified. Use --tune, --train, or --validate.")
         print("Run with --help for more information.")
@@ -146,6 +146,15 @@ Examples:
         help="Number of tuning iterations (default: 30)",
         type=int,
         default=30,
+    )
+
+    parser.add_argument(
+        "--hyper-yaml",
+        "-hy",
+        help="The name of a yaml containing hyperparameters to use for training",
+        type=str,
+        default="",
+        dest="hyper_params",
     )
 
     args = parser.parse_args()

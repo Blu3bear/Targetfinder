@@ -225,7 +225,7 @@ def load_target_images(
     if VERBOSE:
         print("Loading in targets...")
     # Check target directory
-    if not target_dir or os.path.isdir(target_dir):
+    if target_dir and os.path.isdir(target_dir):
         # Directory exists, now check for not empty
         for file in os.scandir(target_dir):
             if not os.path.isdir(file):
@@ -688,8 +688,23 @@ def generate_image(
         rotation, Image.Resampling.BILINEAR, True, fillcolor=(0, 0, 0, 0)
     )
 
-    trans_x = np.random.randint(0, background.size[0] - oriented_target.size[0])
-    trans_y = np.random.randint(0, background.size[1] - oriented_target.size[1])
+    # Ensure the oriented target fits in the background
+    if oriented_target.size[0] >= background.size[0] or oriented_target.size[1] >= background.size[1]:
+        # Rescale to fit
+        scale_factor = min(
+            (background.size[0] - 10) / oriented_target.size[0],
+            (background.size[1] - 10) / oriented_target.size[1]
+        )
+        new_fit_size = (
+            int(oriented_target.size[0] * scale_factor),
+            int(oriented_target.size[1] * scale_factor)
+        )
+        oriented_target = oriented_target.resize(new_fit_size, Image.Resampling.HAMMING)
+        # Update new_size for bbox calculation
+        new_size = (int(new_size[0] * scale_factor), int(new_size[1] * scale_factor))
+
+    trans_x = np.random.randint(0, max(1, background.size[0] - oriented_target.size[0]))
+    trans_y = np.random.randint(0, max(1, background.size[1] - oriented_target.size[1]))
 
     # Paste and translate the reorented target onto the background
     # the mask makes sure that we dont delete neighboring pixels due to the rotation
@@ -889,6 +904,7 @@ Examples:
         help="The initial fixed scaling of the target image.",
         default=BASE_SCALE,
         type=float,
+        dest="base_scale"
     )
 
     args = parser.parse_args()
