@@ -15,6 +15,7 @@ import argparse
 import os
 import random
 import shutil
+import time
 from pathlib import Path
 from typing import Optional, Iterable
 
@@ -794,6 +795,8 @@ def main(args: argparse.Namespace) -> None:
         print(f"  Procedural backgrounds: {args.num_bg}")
         print()
 
+    start_time = time.perf_counter()
+
     generate_dataset(
         num_images=args.number,
         training_split=args.training_split,
@@ -801,7 +804,8 @@ def main(args: argparse.Namespace) -> None:
         num_bg=args.num_bg,
     )
 
-    print("Dataset generation complete!")
+    elapsed = time.perf_counter() - start_time
+    print(f"Dataset generation completed in {elapsed:.2f} seconds!")
 
 
 if __name__ == "__main__":
