@@ -359,6 +359,28 @@ def apply_augmentations(
     Returns:
         Augmented image.
     """
+
+
+    if np.random.uniform() < config.get("hue_shift"):
+        pass
+    
+    if np.random.uniform() < config.get("saturation_shift"):
+        pass
+    
+    if np.random.uniform() < config.get("noise_salt"):
+        pass
+    
+    if np.random.uniform() < config.get("random_lines"):
+        pass
+    
+    if np.random.uniform() < config.get("rotation"):
+        pass
+    
+    if np.random.uniform() < config.get("pixel_shift"):
+        pass
+    
+
+    return image
     # TODO: Implement augmentation pipeline
     # - For each augmentation, roll dice against probability
     # - Apply augmentation if selected
@@ -727,10 +749,12 @@ def generate_image(
         corner / background.size[i % 2] for i, corner in enumerate(obbox)
     )
 
-    # TODO: apply a tranformation to give some more perspective to the target
 
     # if augment is enabled randomly choose to apply one or more
+    if AUGMENT:
+        composition = apply_augmentation(composition)
 
+    # return the final composition to be stored
     return composition, yolo_obbox
 
 
@@ -774,7 +798,6 @@ def generate_dataset(
             # Put the target on the background
             gen, bbox = generate_image(bg, target)
 
-            # TODO: add support for more than one type of class
             annotation = generate_yolo_annotation(class_id, bbox)
 
             # Save the image in the directory,
@@ -906,8 +929,15 @@ Examples:
         type=float,
         dest="base_scale"
     )
+    parser.add_argument(
+        "-sa",
+        "--skip-augment",
+        help="Disables data augmentation of the final compositions.",
+        action="store_false",
+        )
 
     args = parser.parse_args()
+    AUGMENT = not args.skip_augment
     VERBOSE = args.verbose
     IMG_WIDTH = args.width
     IMG_HEIGHT = args.height
