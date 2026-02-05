@@ -21,7 +21,7 @@ from typing import Optional, Iterable
 
 import numpy as np
 import yaml
-from PIL import Image
+from PIL import Image, ImageEnhance
 
 # =============================================================================
 # CONFIGURATION / CONSTANTS
@@ -53,11 +53,11 @@ GRAVEL_LIGHT_GRAY = (86, 92, 98)
 # Augmentation probabilities (0.0 to 1.0)
 AUGMENTATION_CONFIG = {
     "hue_shift": 0.3,
-    "saturation_shift": 0.3,
+    "saturation_shift": 0.4,
     "noise_salt": 0.2,
     "random_lines": 0.2,
-    "rotation": 0.4,
-    "pixel_shift": 0.1,
+    "rotation": 0.2,
+    "pixel_shift": 0.3,
 }
 
 VERBOSE = False
@@ -360,35 +360,29 @@ def apply_augmentations(
         Augmented image.
     """
 
-
     if np.random.uniform() < config.get("hue_shift"):
-        pass
-    
+        image = augment_hue_shift(image)
+
     if np.random.uniform() < config.get("saturation_shift"):
-        pass
-    
+        image = augment_saturation(image)
+
     if np.random.uniform() < config.get("noise_salt"):
-        pass
-    
+        image = augment_salt_noise(image)
+
     if np.random.uniform() < config.get("random_lines"):
-        pass
-    
+        put_random_lines(image)
+
     if np.random.uniform() < config.get("rotation"):
-        pass
-    
+        image = augment_rotation(image)
+
     if np.random.uniform() < config.get("pixel_shift"):
-        pass
-    
+        image = augment_pixel_shift(image)
 
     return image
-    # TODO: Implement augmentation pipeline
-    # - For each augmentation, roll dice against probability
-    # - Apply augmentation if selected
-    raise NotImplementedError("apply_augmentations not yet implemented")
 
 
 def augment_hue_shift(
-    image: Image.Image, shift_range: tuple[int, int] = (-30, 30)
+    image: Image.Image, shift_range: tuple[int, int] = (-10, 10)
 ) -> Image.Image:
     """
     Shift the hue of the image by a random amount.
@@ -400,8 +394,12 @@ def augment_hue_shift(
     Returns:
         Hue-shifted image.
     """
-    # TODO: Implement hue shift
-    raise NotImplementedError("augment_hue_shift not yet implemented")
+    # Convert to HSV, shift hue, convert back
+    hsv = image.convert("HSV")
+    arr = np.array(hsv, dtype=np.int16)
+    shift = np.random.randint(shift_range[0], shift_range[1])
+    arr[:, :, 0] = (arr[:, :, 0] + shift) % 256
+    return Image.fromarray(arr.astype(np.uint8), mode="HSV").convert("RGB")
 
 
 def augment_saturation(
@@ -417,8 +415,9 @@ def augment_saturation(
     Returns:
         Saturation-adjusted image.
     """
-    # TODO: Implement saturation adjustment
-    raise NotImplementedError("augment_saturation not yet implemented")
+    factor = np.random.uniform(factor_range[0], factor_range[1])
+    enhancer = ImageEnhance.Color(image)
+    return enhancer.enhance(factor)
 
 
 def augment_salt_noise(image: Image.Image, density: float = 0.01) -> Image.Image:
@@ -432,13 +431,15 @@ def augment_salt_noise(image: Image.Image, density: float = 0.01) -> Image.Image
     Returns:
         Noisy image.
     """
-    # TODO: Implement salt noise
-    raise NotImplementedError("augment_salt_noise not yet implemented")
+    arr = np.array(image)
+    mask = np.random.random(arr.shape[:2]) < density
+    arr[mask] = 255
+    return Image.fromarray(arr)
 
 
-def augment_random_lines(
+def put_random_lines(
     image: Image.Image, num_lines_range: tuple[int, int] = (1, 5)
-) -> Image.Image:
+) -> None:
     """
     Draw random lines on the image.
 
@@ -449,12 +450,71 @@ def augment_random_lines(
     Returns:
         Image with random lines.
     """
-    # TODO: Implement random line drawing
-    raise NotImplementedError("augment_random_lines not yet implemented")
+
+    num_lines = np.random.randint(num_lines_range[0], num_lines_range[1])
+
+    for _ in range(num_lines):
+        # Pick length
+        length = np.random.randint(10, image.size[0] * 0.7)
+        # Pick thickness
+        thickness = np.random.randint(1, image.size[1] * 0.01)
+        # Pick base color
+        color = np.random.randint(0, 225, (1, 1, 3))
+        # Pick if solid color or noise map
+        if np.random.random() < 0.5:
+            # Generate a noise map
+            noise_map = np.random.normal(
+                np.random.normal(0.75, 0.1), 40 / 255, (length, thickness)
+            )
+            # Clip the noise map to be 0-1.0
+            noise_map = np.clip(noise_map, 0, 1.0)
+            # Expand map axis(1 channel image to 3 channel)
+            noise_map = np.repeat(np.expand_dims(noise_map, axis=2), 3, 2)
+            # Apply coloring
+            colored_map = color * noise_map
+        else:
+            # Generate a noise map
+            noise_map = np.ones((length, thickness, 3))
+            # Apply coloring
+            colored_map = color * noise_map
+
+        # Add alpha channel (fully opaque)
+        alpha_channel = np.full((length, thickness, 1), 255)
+        colored_map = np.concatenate((colored_map, alpha_channel), axis=2)
+
+        # Make image
+        line_obj = Image.fromarray(colored_map.astype(np.uint8), mode="RGBA")
+
+        # Pick rotation
+        rot = np.random.randint(0, 360)
+
+        line_obj = line_obj.rotate(
+            rot, Image.Resampling.BILINEAR, True, fillcolor=(0, 0, 0, 0)
+        )
+
+        # Ensure the oriented target fits in the background
+        if line_obj.size[0] >= image.size[0] or line_obj.size[1] >= image.size[1]:
+            # Rescale to fit
+            scale_factor = min(
+                (image.size[0] - 10) / line_obj.size[0],
+                (image.size[1] - 10) / line_obj.size[1],
+            )
+            new_fit_size = (
+                int(line_obj.size[0] * scale_factor),
+                int(line_obj.size[1] * scale_factor),
+            )
+            line_obj = line_obj.resize(new_fit_size, Image.Resampling.HAMMING)
+
+        # Pick x and y offsets
+        trans_x = np.random.randint(image.size[0] - line_obj.size[0])
+        trans_y = np.random.randint(image.size[1] - line_obj.size[1])
+
+        # Place line on original image
+        image.paste(line_obj, (trans_x, trans_y), line_obj)
 
 
 def augment_rotation(
-    image: Image.Image, angle_range: tuple[float, float] = (-15, 15)
+    image: Image.Image, angle_range: tuple[float, float] = (-3, 3)
 ) -> Image.Image:
     """
     Rotate the entire image by a random angle.
@@ -466,8 +526,8 @@ def augment_rotation(
     Returns:
         Rotated image (cropped to original dimensions).
     """
-    # TODO: Implement image rotation
-    raise NotImplementedError("augment_rotation not yet implemented")
+    angle = np.random.uniform(angle_range[0], angle_range[1])
+    return image.rotate(angle, Image.Resampling.BILINEAR, expand=False)
 
 
 def augment_pixel_shift(image: Image.Image, max_shift: int = 5) -> Image.Image:
@@ -481,8 +541,12 @@ def augment_pixel_shift(image: Image.Image, max_shift: int = 5) -> Image.Image:
     Returns:
         Pixel-shifted image.
     """
-    # TODO: Implement pixel shift
-    raise NotImplementedError("augment_pixel_shift not yet implemented")
+    shift_x = np.random.randint(-max_shift, max_shift + 1)
+    shift_y = np.random.randint(-max_shift, max_shift + 1)
+    arr = np.array(image)
+    arr = np.roll(arr, shift_x, axis=1)
+    arr = np.roll(arr, shift_y, axis=0)
+    return Image.fromarray(arr)
 
 
 # =============================================================================
@@ -696,9 +760,9 @@ def generate_image(
     """
 
     # Scaling factor for scaling the image
-    scale = np.random.normal(1.0, 0.25)*BASE_SCALE
+    scale = np.random.normal(1.0, 0.25) * BASE_SCALE
     # Make sure the scale is positive
-    scale = np.clip(scale,0.0,100.0)
+    scale = np.clip(scale, 0.0, 100.0)
 
     # Angle for rotation
     rotation = np.random.randint(0, 360)
@@ -711,15 +775,18 @@ def generate_image(
     )
 
     # Ensure the oriented target fits in the background
-    if oriented_target.size[0] >= background.size[0] or oriented_target.size[1] >= background.size[1]:
+    if (
+        oriented_target.size[0] >= background.size[0]
+        or oriented_target.size[1] >= background.size[1]
+    ):
         # Rescale to fit
         scale_factor = min(
             (background.size[0] - 10) / oriented_target.size[0],
-            (background.size[1] - 10) / oriented_target.size[1]
+            (background.size[1] - 10) / oriented_target.size[1],
         )
         new_fit_size = (
             int(oriented_target.size[0] * scale_factor),
-            int(oriented_target.size[1] * scale_factor)
+            int(oriented_target.size[1] * scale_factor),
         )
         oriented_target = oriented_target.resize(new_fit_size, Image.Resampling.HAMMING)
         # Update new_size for bbox calculation
@@ -749,10 +816,9 @@ def generate_image(
         corner / background.size[i % 2] for i, corner in enumerate(obbox)
     )
 
-
     # if augment is enabled randomly choose to apply one or more
-    if AUGMENT:
-        composition = apply_augmentation(composition)
+    if apply_augmentation:
+        composition = apply_augmentations(composition)
 
     # return the final composition to be stored
     return composition, yolo_obbox
@@ -796,7 +862,7 @@ def generate_dataset(
             target = get_random_item(target_list)
 
             # Put the target on the background
-            gen, bbox = generate_image(bg, target)
+            gen, bbox = generate_image(bg, target, AUGMENT)
 
             annotation = generate_yolo_annotation(class_id, bbox)
 
@@ -927,14 +993,14 @@ Examples:
         help="The initial fixed scaling of the target image.",
         default=BASE_SCALE,
         type=float,
-        dest="base_scale"
+        dest="base_scale",
     )
     parser.add_argument(
         "-sa",
         "--skip-augment",
         help="Disables data augmentation of the final compositions.",
-        action="store_false",
-        )
+        action="store_true",
+    )
 
     args = parser.parse_args()
     AUGMENT = not args.skip_augment
